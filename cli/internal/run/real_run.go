@@ -117,7 +117,6 @@ func RealRun(
 			executionSummary := &runsummary.TaskExecutionSummary{
 				Start:    state.StartAt,
 				Duration: state.Duration,
-				Label:    state.Label,
 				Err:      state.Err,
 			}
 

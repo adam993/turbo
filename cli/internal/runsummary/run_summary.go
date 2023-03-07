@@ -34,7 +34,6 @@ type RunSummary struct {
 type TaskExecutionSummary struct {
 	Start    time.Time     `json:"start"`
 	Duration time.Duration `json:"duration"`
-	Label    string        `json:"-"`      // Target which has just changed. Omit from JSOn
 	Status   string        `json:"status"` // Its current status
 	Err      error         `json:"error"`  // Error, only populated for failure statuses
 }
