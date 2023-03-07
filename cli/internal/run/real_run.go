@@ -312,6 +312,11 @@ func (ec *execContext) exec(ctx gocontext.Context, packageTask *nodes.PackageTas
 		if errors.Is(err, process.ErrClosing) {
 			return nil
 		}
+
+		var e *process.ChildExit
+		if errors.As(err, &e) {
+			// add exit code
+		}
 		tracer(TargetBuildFailed, err)
 		progressLogger.Error(fmt.Sprintf("Error: command finished with error: %v", err))
 		if !ec.rs.Opts.runOpts.continueOnError {
