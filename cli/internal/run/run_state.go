@@ -60,22 +60,20 @@ func (rrs RunResultStatus) ToString() (string, error) {
 	return "", fmt.Errorf("invalid RunResultStatus: %v", rrs)
 }
 
-// BuildTargetState captures the state of a task
 type BuildTargetState struct {
-	StartAt  time.Time     `json:"startAt"`
-	Duration time.Duration `json:"duration"`
+	StartAt  time.Time
+	Duration time.Duration
 	// Target which has just changed
-	Label string `json:"-"`
+	Label string
 	// Its current status
-	Status RunResultStatus `json:"status"`
+	Status RunResultStatus
 	// Error, only populated for failure statuses
-	Err error `json:"error"`
+	Err error
 }
 
-// RunState contains the
 type RunState struct {
 	mu      sync.Mutex
-	state   map[string]*BuildTargetState // taskID => state
+	state   map[string]*BuildTargetState
 	Success int
 	Failure int
 	// Is the output streaming?
@@ -101,7 +99,8 @@ func NewRunState(startedAt time.Time, tracingProfile string) *RunState {
 		Attempted:       0,
 		state:           make(map[string]*BuildTargetState),
 		profileFilename: tracingProfile,
-		startedAt:       startedAt,
+
+		startedAt: startedAt,
 	}
 }
 
