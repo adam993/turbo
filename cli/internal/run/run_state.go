@@ -60,6 +60,7 @@ func (rrs RunResultStatus) ToString() (string, error) {
 	return "", fmt.Errorf("invalid RunResultStatus: %v", rrs)
 }
 
+// BuildTargetState contains execution summary for a task
 type BuildTargetState struct {
 	StartAt  time.Time
 	Duration time.Duration
@@ -71,6 +72,7 @@ type BuildTargetState struct {
 	Err error
 }
 
+// RunState is the state of the entire `turb run`. Individual task state in `state` field
 type RunState struct {
 	mu      sync.Mutex
 	state   map[string]*BuildTargetState

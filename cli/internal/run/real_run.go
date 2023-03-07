@@ -123,6 +123,9 @@ func RealRun(
 			// Catch the error if Status is somehow invalid
 			if status, err := state.Status.ToString(); err == nil {
 				executionSummary.Status = status
+				if status == "cached" {
+					executionSummary.CacheHit = true
+				}
 			}
 
 			t.Execution = executionSummary

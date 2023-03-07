@@ -34,6 +34,7 @@ type RunSummary struct {
 type TaskExecutionSummary struct {
 	Start    time.Time     `json:"start"`
 	Duration time.Duration `json:"duration"`
+	CacheHit bool          `json:"cache"`
 	Status   string        `json:"status"` // Its current status
 	Err      error         `json:"error"`  // Error, only populated for failure statuses
 }
