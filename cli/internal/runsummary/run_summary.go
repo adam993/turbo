@@ -86,6 +86,7 @@ type TaskSummary struct {
 	Dependents             []string                              `json:"dependents"`
 	ResolvedTaskDefinition *fs.TaskDefinition                    `json:"resolvedTaskDefinition"`
 	ExpandedInputs         map[turbopath.AnchoredUnixPath]string `json:"expandedInputs"`
+	ExpandedOutputs        []turbopath.AnchoredSystemPath        `json:"expandedOutputs"`
 	Framework              string                                `json:"framework"`
 	EnvVars                TaskEnvVarSummary                     `json:"environmentVariables"`
 }
@@ -120,6 +121,7 @@ func (ht *TaskSummary) toSinglePackageTask() singlePackageTaskSummary {
 		ResolvedTaskDefinition: ht.ResolvedTaskDefinition,
 		Framework:              ht.Framework,
 		ExpandedInputs:         ht.ExpandedInputs,
+		ExpandedOutputs:        ht.ExpandedOutputs,
 		EnvVars:                ht.EnvVars,
 	}
 }
