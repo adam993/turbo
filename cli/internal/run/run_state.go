@@ -42,21 +42,40 @@ const (
 	TargetBuildFailed
 )
 
-type BuildTargetState struct {
-	StartAt time.Time
+// ToString returns a human readable string for the status enum
+func (rrs RunResultStatus) ToString() (string, error) {
+	switch rrs {
+	case TargetBuilding:
+		return "building", nil
+	case TargetBuildStopped:
+		return "stopped", nil
+	case TargetBuilt:
+		return "built", nil
+	case TargetCached:
+		return "cached", nil
+	case TargetBuildFailed:
+		return "failed", nil
+	}
 
-	Duration time.Duration
-	// Target which has just changed
-	Label string
-	// Its current status
-	Status RunResultStatus
-	// Error, only populated for failure statuses
-	Err error
+	return "", fmt.Errorf("invalid RunResultStatus: %v", rrs)
 }
 
+// BuildTargetState captures the state of a task
+type BuildTargetState struct {
+	StartAt  time.Time     `json:"startAt"`
+	Duration time.Duration `json:"duration"`
+	// Target which has just changed
+	Label string `json:"-"`
+	// Its current status
+	Status RunResultStatus `json:"status"`
+	// Error, only populated for failure statuses
+	Err error `json:"error"`
+}
+
+// RunState contains the
 type RunState struct {
 	mu      sync.Mutex
-	state   map[string]*BuildTargetState
+	state   map[string]*BuildTargetState // taskID => state
 	Success int
 	Failure int
 	// Is the output streaming?
@@ -82,8 +101,7 @@ func NewRunState(startedAt time.Time, tracingProfile string) *RunState {
 		Attempted:       0,
 		state:           make(map[string]*BuildTargetState),
 		profileFilename: tracingProfile,
-
-		startedAt: startedAt,
+		startedAt:       startedAt,
 	}
 }
 

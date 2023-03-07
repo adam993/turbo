@@ -90,10 +90,11 @@ func RealRun(
 		Concurrency: rs.Opts.runOpts.concurrency,
 	}
 
-	taskSummaries := []*runsummary.TaskSummary{}
+	taskSummaryMap := map[string]*runsummary.TaskSummary{}
+
 	execFunc := func(ctx gocontext.Context, packageTask *nodes.PackageTask, taskSummary *runsummary.TaskSummary) error {
 		deps := engine.TaskGraph.DownEdges(packageTask.TaskID)
-		taskSummaries = append(taskSummaries, taskSummary)
+		taskSummaryMap[packageTask.TaskID] = taskSummary
 		// deps here are passed in to calculate the task hash
 		return ec.exec(ctx, packageTask, deps)
 	}
@@ -109,8 +110,30 @@ func RealRun(
 	exitCode := 0
 	exitCodeErr := &process.ChildExit{}
 
-	// Assign tasks after execution
-	runSummary.Tasks = taskSummaries
+	runState.mu.Lock()
+
+	for taskID, state := range runState.state {
+		if t, ok := taskSummaryMap[taskID]; ok {
+			executionSummary := &runsummary.TaskExecutionSummary{
+				Start:    state.StartAt,
+				Duration: state.Duration,
+				Label:    state.Label,
+				Err:      state.Err,
+			}
+
+			// Catch the error if Status is somehow invalid
+			if status, err := state.Status.ToString(); err == nil {
+				executionSummary.Status = status
+			}
+
+			t.Execution = executionSummary
+		}
+	}
+
+	// We gathered the info as a map, but we want to attach it as an array
+	for _, s := range taskSummaryMap {
+		runSummary.Tasks = append(runSummary.Tasks, s)
+	}
 
 	for _, err := range errs {
 		if errors.As(err, &exitCodeErr) {

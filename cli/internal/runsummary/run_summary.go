@@ -4,6 +4,7 @@ package runsummary
 import (
 	"fmt"
 	"path/filepath"
+	"time"
 
 	"github.com/segmentio/ksuid"
 	"github.com/vercel/turbo/cli/internal/cache"
@@ -27,6 +28,15 @@ type RunSummary struct {
 	GlobalHashSummary *GlobalHashSummary `json:"globalHashSummary"`
 	Packages          []string           `json:"packages"`
 	Tasks             []*TaskSummary     `json:"tasks"`
+}
+
+// TaskExecutionSummary contains data about the actual execution of a task
+type TaskExecutionSummary struct {
+	Start    time.Time     `json:"start"`
+	Duration time.Duration `json:"duration"`
+	Label    string        `json:"-"`      // Target which has just changed. Omit from JSOn
+	Status   string        `json:"status"` // Its current status
+	Err      error         `json:"error"`  // Error, only populated for failure statuses
 }
 
 // NewRunSummary returns a RunSummary instance
@@ -88,6 +98,7 @@ type TaskSummary struct {
 	ExpandedInputs         map[turbopath.AnchoredUnixPath]string `json:"expandedInputs"`
 	Framework              string                                `json:"framework"`
 	EnvVars                TaskEnvVarSummary                     `json:"environmentVariables"`
+	Execution              *TaskExecutionSummary                 `json:"execution"`
 }
 
 // TaskEnvVarSummary contains the environment variables that impacted a task's hash
@@ -121,5 +132,6 @@ func (ht *TaskSummary) toSinglePackageTask() singlePackageTaskSummary {
 		Framework:              ht.Framework,
 		ExpandedInputs:         ht.ExpandedInputs,
 		EnvVars:                ht.EnvVars,
+		Execution:              ht.Execution,
 	}
 }
