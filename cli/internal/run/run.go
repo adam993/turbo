@@ -10,7 +10,6 @@ import (
 
 	"github.com/vercel/turbo/cli/internal/analytics"
 	"github.com/vercel/turbo/cli/internal/cache"
-	"github.com/vercel/turbo/cli/internal/chrometracing"
 	"github.com/vercel/turbo/cli/internal/cmdutil"
 	"github.com/vercel/turbo/cli/internal/context"
 	"github.com/vercel/turbo/cli/internal/core"
@@ -349,11 +348,8 @@ func (r *run) run(ctx gocontext.Context, targets []string) error {
 		}
 	}
 
-	if rs.Opts.runOpts.profile != "" {
-		chrometracing.EnableTracing()
-	}
 	// executionSummary captures the runtime results for this run (e.g. timings of each task and profile)
-	executionSummary := runsummary.NewExecutionSummary(startAt)
+	executionSummary := runsummary.NewExecutionSummary(startAt, rs.Opts.runOpts.profile)
 
 	// RunSummary contains information that is statically analyzable about
 	// the tasks that we expect to run based on the user command.
@@ -384,7 +380,7 @@ func (r *run) run(ctx gocontext.Context, targets []string) error {
 	}
 
 	// Regular run
-	RealRun(
+	return RealRun(
 		ctx,
 		g,
 		rs,
@@ -399,12 +395,6 @@ func (r *run) run(ctx gocontext.Context, targets []string) error {
 		r.processes,
 		executionSummary,
 	)
-
-	if err := writeChrometracing(r.opts.runOpts.profile, r.base.UI); err != nil {
-		r.base.UI.Error(fmt.Sprintf("Error writing tracing data: %v", err))
-	}
-
-	return nil
 }
 
 func (r *run) initAnalyticsClient(ctx gocontext.Context) analytics.Client {

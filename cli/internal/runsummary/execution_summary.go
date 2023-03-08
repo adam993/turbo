@@ -1,11 +1,13 @@
 package runsummary
 
 import (
+	"fmt"
 	"os"
 	"sync"
 	"time"
 
 	"github.com/vercel/turbo/cli/internal/chrometracing"
+	"github.com/vercel/turbo/cli/internal/fs"
 	"github.com/vercel/turbo/cli/internal/ui"
 	"github.com/vercel/turbo/cli/internal/util"
 
@@ -25,6 +27,8 @@ type ExecutionSummary struct {
 	Attempted int
 
 	startedAt time.Time
+
+	profileFilename string
 }
 
 // TaskExecutionSummary contains data about the state of a single task in a turbo run.
@@ -41,14 +45,19 @@ type TaskExecutionSummary struct {
 }
 
 // NewExecutionSummary creates a ExecutionSummary instance to track events in a `turbo run`.`
-func NewExecutionSummary(start time.Time) *ExecutionSummary {
+func NewExecutionSummary(start time.Time, tracingProfile string) *ExecutionSummary {
+	if tracingProfile != "" {
+		chrometracing.EnableTracing()
+	}
+
 	return &ExecutionSummary{
-		Success:   0,
-		Failure:   0,
-		Cached:    0,
-		Attempted: 0,
-		Tasks:     make(map[string]*TaskExecutionSummary),
-		startedAt: start,
+		Success:         0,
+		Failure:         0,
+		Cached:          0,
+		Attempted:       0,
+		Tasks:           make(map[string]*TaskExecutionSummary),
+		startedAt:       start,
+		profileFilename: tracingProfile,
 	}
 }
 
@@ -104,27 +113,8 @@ func (es *ExecutionSummary) Run(taskID string) *TaskExecutionSummary {
 	es.Tasks[taskID] = taskExecSummary
 
 	taskExecSummary.Add(TargetBuilding, nil, nil)
-
-	taskExecSummary.tracer = chrometracing.Event(taskID)
-
+	taskExecSummary.tracer = chrometracing.Event(taskID) // TOOD: defer .tracer.Done(0)
 	return taskExecSummary
-
-	// return func(name ExecutionEventName, err error, exitCode *int) {
-	// 	defer tracer.Done()
-	// 	now := time.Now()
-
-	// 	event := &ExecutionEvent{
-	// 		Time:     now,
-	// 		Duration: now.Sub(startAt),
-	// 		Name:     name,
-	// 	}
-
-	// 	if err != nil {
-	// 		event.Err = fmt.Errorf("running %v failed: %w", taskID, err)
-	// 	}
-
-	// 	taskExecSummary.add(event, exitCode)
-	// }
 }
 
 func (t *TaskExecutionSummary) start(start time.Time) {
@@ -163,6 +153,10 @@ func (t *TaskExecutionSummary) Add(name ExecutionEventName, err error, exitCode 
 // Close finishes a trace of a turbo run. The tracing file will be written if applicable,
 // and run stats are written to the terminal
 func (es *ExecutionSummary) Close(terminal cli.Ui) error {
+	if err := writeChrometracing(es.profileFilename, terminal); err != nil {
+		terminal.Error(fmt.Sprintf("Error writing tracing data: %v", err))
+	}
+
 	maybeFullTurbo := ""
 	if es.Cached == es.Attempted && es.Attempted > 0 {
 		terminalProgram := os.Getenv("TERM_PROGRAM")
@@ -186,5 +180,36 @@ func (es *ExecutionSummary) Close(terminal cli.Ui) error {
 	terminal.Output(util.Sprintf("${BOLD}Cached:    %v cached${RESET}${GRAY}, %v total${RESET}", es.Cached, es.Attempted))
 	terminal.Output(util.Sprintf("${BOLD}  Time:    %v${RESET} %v${RESET}", time.Since(es.startedAt).Truncate(time.Millisecond), maybeFullTurbo))
 	terminal.Output("")
+	return nil
+}
+
+// writeChromeTracing writes to a profile name if the `--profile` flag was passed to turbo run
+func writeChrometracing(filename string, terminal cli.Ui) error {
+	outputPath := chrometracing.Path()
+	if outputPath == "" {
+		// tracing wasn't enabled
+		return nil
+	}
+
+	name := fmt.Sprintf("turbo-%s.trace", time.Now().Format(time.RFC3339))
+	if filename != "" {
+		name = filename
+	}
+	if err := chrometracing.Close(); err != nil {
+		terminal.Warn(fmt.Sprintf("Failed to flush tracing data: %v", err))
+	}
+	cwdRaw, err := os.Getwd()
+	if err != nil {
+		return err
+	}
+	root, err := fs.GetCwd(cwdRaw)
+	if err != nil {
+		return err
+	}
+	// chrometracing.Path() is absolute by default, but can still be relative if overriden via $CHROMETRACING_DIR
+	// so we have to account for that before converting to turbopath.AbsoluteSystemPath
+	if err := fs.CopyFile(&fs.LstatCachedFile{Path: fs.ResolveUnknownPath(root, outputPath)}, name); err != nil {
+		return err
+	}
 	return nil
 }
