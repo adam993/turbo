@@ -35,6 +35,6 @@ Run the following command:
 ```sh
 npx degit vercel/turbo/examples/kitchen-sink kitchen-sink
 cd kitchen-sink
-pnpm install
+pnpm install #`npm install` won't work, nstall pnpm package manager in order to set up this repo properly. It can be easily installed using npm, `npm install -g pnpm`
 git init . && git add . && git commit -m "Init"
 ```
