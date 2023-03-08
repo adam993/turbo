@@ -44,7 +44,7 @@ func RealRun(
 	runSummary *runsummary.RunSummary,
 	packageManager *packagemanager.PackageManager,
 	processes *process.Manager,
-	runState *ExecutionSummary,
+	executionSummary *runsummary.ExecutionSummary,
 ) error {
 	singlePackage := rs.Opts.runOpts.singlePackage
 
@@ -71,17 +71,17 @@ func RealRun(
 	runCache := runcache.New(turboCache, base.RepoRoot, rs.Opts.runcacheOpts, colorCache)
 
 	ec := &execContext{
-		colorCache:      colorCache,
-		runState:        runState,
-		rs:              rs,
-		ui:              &cli.ConcurrentUi{Ui: base.UI},
-		runCache:        runCache,
-		logger:          base.Logger,
-		packageManager:  packageManager,
-		processes:       processes,
-		taskHashTracker: taskHashTracker,
-		repoRoot:        base.RepoRoot,
-		isSinglePackage: singlePackage,
+		colorCache:       colorCache,
+		executionSummary: executionSummary,
+		rs:               rs,
+		ui:               &cli.ConcurrentUi{Ui: base.UI},
+		runCache:         runCache,
+		logger:           base.Logger,
+		packageManager:   packageManager,
+		processes:        processes,
+		taskHashTracker:  taskHashTracker,
+		repoRoot:         base.RepoRoot,
+		isSinglePackage:  singlePackage,
 	}
 
 	// run the thing
@@ -110,25 +110,11 @@ func RealRun(
 	exitCode := 0
 	exitCodeErr := &process.ChildExit{}
 
-	runState.mu.Lock()
-
-	for taskID, state := range runState.tasks {
-		if t, ok := taskSummaryMap[taskID]; ok {
-			executionSummary := &runsummary.TaskExecutionSummary{
-				Start:    state.StartAt,
-				Duration: state.Duration,
-				Err:      state.Err,
-			}
-
-			// Catch the error if Status is somehow invalid
-			if status, err := state.Status.ToString(); err == nil {
-				executionSummary.Status = status
-				if status == "cached" {
-					executionSummary.CacheHit = true
-				}
-			}
-
-			t.Execution = executionSummary
+	// read all the taskExecSummaries off executionSummary and assign to the taskSummary
+	executionSummary.Mu.Lock()
+	for taskID, taskExecSummary := range executionSummary.Tasks {
+		if taskSummary, ok := taskSummaryMap[taskID]; ok {
+			taskSummary.Execution = taskExecSummary
 		}
 	}
 
@@ -149,7 +135,7 @@ func RealRun(
 		base.UI.Error(err.Error())
 	}
 
-	if err := runState.Close(base.UI); err != nil {
+	if err := executionSummary.Close(base.UI); err != nil {
 		return errors.Wrap(err, "error with profiler")
 	}
 
@@ -169,17 +155,17 @@ func RealRun(
 }
 
 type execContext struct {
-	colorCache      *colorcache.ColorCache
-	runState        *RunState
-	rs              *runSpec
-	ui              cli.Ui
-	runCache        *runcache.RunCache
-	logger          hclog.Logger
-	packageManager  *packagemanager.PackageManager
-	processes       *process.Manager
-	taskHashTracker *taskhash.Tracker
-	repoRoot        turbopath.AbsoluteSystemPath
-	isSinglePackage bool
+	colorCache       *colorcache.ColorCache
+	executionSummary *runsummary.ExecutionSummary
+	rs               *runSpec
+	ui               cli.Ui
+	runCache         *runcache.RunCache
+	logger           hclog.Logger
+	packageManager   *packagemanager.PackageManager
+	processes        *process.Manager
+	taskHashTracker  *taskhash.Tracker
+	repoRoot         turbopath.AbsoluteSystemPath
+	isSinglePackage  bool
 }
 
 func (ec *execContext) logError(log hclog.Logger, prefix string, err error) {
@@ -199,7 +185,7 @@ func (ec *execContext) exec(ctx gocontext.Context, packageTask *nodes.PackageTas
 	progressLogger.Debug("start")
 
 	// Setup tracer
-	tracer := ec.runState.Run(packageTask.TaskID)
+	taskExecSummary := ec.executionSummary.Run(packageTask.TaskID)
 
 	passThroughArgs := ec.rs.ArgsForTask(packageTask.Task)
 	hash := packageTask.Hash
@@ -239,7 +225,7 @@ func (ec *execContext) exec(ctx gocontext.Context, packageTask *nodes.PackageTas
 	if err != nil {
 		prefixedUI.Error(fmt.Sprintf("error fetching from cache: %s", err))
 	} else if hit {
-		tracer(TargetCached, nil)
+		taskExecSummary.Add(runsummary.TargetCached, nil, nil)
 		return nil
 	}
 
@@ -261,7 +247,7 @@ func (ec *execContext) exec(ctx gocontext.Context, packageTask *nodes.PackageTas
 	// be careful about this conditional given the default of cache = true
 	writer, err := taskCache.OutputWriter(prettyPrefix)
 	if err != nil {
-		tracer(TargetBuildFailed, err)
+		taskExecSummary.Add(runsummary.TargetBuildFailed, err, nil)
 		ec.logError(progressLogger, prettyPrefix, err)
 		if !ec.rs.Opts.runOpts.continueOnError {
 			os.Exit(1)
@@ -314,10 +300,12 @@ func (ec *execContext) exec(ctx gocontext.Context, packageTask *nodes.PackageTas
 		}
 
 		var e *process.ChildExit
+		var exitCode int
 		if errors.As(err, &e) {
+			exitCode = err.(*process.ChildExit).ExitCode
 			// add exit code
 		}
-		tracer(TargetBuildFailed, err)
+		taskExecSummary.Add(runsummary.TargetBuildFailed, err, &exitCode)
 		progressLogger.Error(fmt.Sprintf("Error: command finished with error: %v", err))
 		if !ec.rs.Opts.runOpts.continueOnError {
 			prefixedUI.Error(fmt.Sprintf("ERROR: command finished with error: %s", err))
@@ -343,7 +331,7 @@ func (ec *execContext) exec(ctx gocontext.Context, packageTask *nodes.PackageTas
 	}
 
 	// Clean up tracing
-	tracer(TargetBuilt, nil)
+	taskExecSummary.Add(runsummary.TargetBuilt, nil, nil)
 	progressLogger.Debug("done", "status", "complete", "duration", duration)
 	return nil
 }
