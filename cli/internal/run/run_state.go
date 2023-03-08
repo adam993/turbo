@@ -8,6 +8,7 @@ import (
 
 	"github.com/vercel/turbo/cli/internal/chrometracing"
 	"github.com/vercel/turbo/cli/internal/fs"
+	"github.com/vercel/turbo/cli/internal/runsummary"
 	"github.com/vercel/turbo/cli/internal/ui"
 	"github.com/vercel/turbo/cli/internal/util"
 
@@ -73,9 +74,9 @@ type BuildTargetState struct {
 }
 
 // RunState is the state of the entire `turb run`. Individual task state in `state` field
-type RunState struct {
+type ExecutionSummary struct {
 	mu      sync.Mutex
-	state   map[string]*BuildTargetState
+	tasks   map[string]*runsummary.TaskExecutionSummary
 	Success int
 	Failure int
 	// Is the output streaming?
@@ -89,24 +90,28 @@ type RunState struct {
 
 // NewRunState creates a RunState instance for tracking events during the
 // course of a run.
-func NewRunState(startedAt time.Time, tracingProfile string) *RunState {
+func NewRunState(
+	startedAt time.Time,
+	tracingProfile string,
+	runSummary *runsummary.RunSummary,
+) *ExecutionSummary {
 	if tracingProfile != "" {
 		chrometracing.EnableTracing()
 	}
 
-	return &RunState{
+	return &ExecutionSummary{
 		Success:         0,
 		Failure:         0,
 		Cached:          0,
 		Attempted:       0,
-		state:           make(map[string]*BuildTargetState),
+		tasks:           make(map[string]*runsummary.TaskExecutionSummary),
 		profileFilename: tracingProfile,
 
 		startedAt: startedAt,
 	}
 }
 
-func (r *RunState) Run(label string) func(outcome RunResultStatus, err error) {
+func (r *ExecutionSummary) Run(label string) func(outcome RunResultStatus, err error) {
 	start := time.Now()
 	r.add(&RunResult{
 		Time:   start,
@@ -132,7 +137,7 @@ func (r *RunState) Run(label string) func(outcome RunResultStatus, err error) {
 	}
 }
 
-func (r *RunState) add(result *RunResult, previous string, active bool) {
+func (r *ExecutionSummary) add(result *RunResult, previous string, active bool) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 	if s, ok := r.state[result.Label]; ok {
@@ -163,7 +168,7 @@ func (r *RunState) add(result *RunResult, previous string, active bool) {
 
 // Close finishes a trace of a turbo run. The tracing file will be written if applicable,
 // and run stats are written to the terminal
-func (r *RunState) Close(terminal cli.Ui) error {
+func (r *ExecutionSummary) Close(terminal cli.Ui) error {
 	if err := writeChrometracing(r.profileFilename, terminal); err != nil {
 		terminal.Error(fmt.Sprintf("Error writing tracing data: %v", err))
 	}

@@ -44,7 +44,7 @@ func RealRun(
 	runSummary *runsummary.RunSummary,
 	packageManager *packagemanager.PackageManager,
 	processes *process.Manager,
-	runState *RunState,
+	runState *ExecutionSummary,
 ) error {
 	singlePackage := rs.Opts.runOpts.singlePackage
 
@@ -112,7 +112,7 @@ func RealRun(
 
 	runState.mu.Lock()
 
-	for taskID, state := range runState.state {
+	for taskID, state := range runState.tasks {
 		if t, ok := taskSummaryMap[taskID]; ok {
 			executionSummary := &runsummary.TaskExecutionSummary{
 				Start:    state.StartAt,

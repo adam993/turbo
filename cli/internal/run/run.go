@@ -377,7 +377,11 @@ func (r *run) run(ctx gocontext.Context, targets []string) error {
 	}
 
 	// RunState captures the runtime results for this run (e.g. timings of each task and profile)
-	runState := NewRunState(startAt, r.opts.runOpts.profile)
+	runState := NewRunState(
+		startAt,
+		r.opts.runOpts.profile,
+		summary,
+	)
 	// Regular run
 	return RealRun(
 		ctx,

@@ -30,15 +30,6 @@ type RunSummary struct {
 	Tasks             []*TaskSummary     `json:"tasks"`
 }
 
-// TaskExecutionSummary contains data about the actual execution of a task
-type TaskExecutionSummary struct {
-	Start    time.Time     `json:"start"`
-	Duration time.Duration `json:"duration"`
-	CacheHit bool          `json:"cache"`
-	Status   string        `json:"status"` // Its current status
-	Err      error         `json:"error"`  // Error, only populated for failure statuses
-}
-
 // NewRunSummary returns a RunSummary instance
 func NewRunSummary(turboVersion string, packages []string, globalHashSummary *GlobalHashSummary) *RunSummary {
 	return &RunSummary{
@@ -99,6 +90,15 @@ type TaskSummary struct {
 	Framework              string                                `json:"framework"`
 	EnvVars                TaskEnvVarSummary                     `json:"environmentVariables"`
 	Execution              *TaskExecutionSummary                 `json:"execution"`
+}
+
+// TaskExecutionSummary contains data about the actual execution of a task
+type TaskExecutionSummary struct {
+	Start    time.Time     `json:"start"`
+	Duration time.Duration `json:"duration"`
+	CacheHit bool          `json:"cache"`
+	Status   string        `json:"status"` // Its current status
+	Err      error         `json:"error"`  // Error, only populated for failure statuses
 }
 
 // TaskEnvVarSummary contains the environment variables that impacted a task's hash
