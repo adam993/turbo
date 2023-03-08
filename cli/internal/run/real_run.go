@@ -90,13 +90,18 @@ func RealRun(
 		Concurrency: rs.Opts.runOpts.concurrency,
 	}
 
-	taskSummaryMap := map[string]*runsummary.TaskSummary{}
-
+	taskSummaries := []*runsummary.TaskSummary{}
 	execFunc := func(ctx gocontext.Context, packageTask *nodes.PackageTask, taskSummary *runsummary.TaskSummary) error {
 		deps := engine.TaskGraph.DownEdges(packageTask.TaskID)
-		taskSummaryMap[packageTask.TaskID] = taskSummary
+		taskSummaries = append(taskSummaries, taskSummary)
+
 		// deps here are passed in to calculate the task hash
-		return ec.exec(ctx, packageTask, deps)
+		if taskExecSummary, err := ec.exec(ctx, packageTask, deps); err != nil {
+			return err
+		} else {
+			taskSummary.Execution = taskExecSummary
+			return nil
+		}
 	}
 
 	getArgs := func(taskID string) []string {
@@ -110,18 +115,8 @@ func RealRun(
 	exitCode := 0
 	exitCodeErr := &process.ChildExit{}
 
-	// read all the taskExecSummaries off executionSummary and assign to the taskSummary
-	executionSummary.Mu.Lock()
-	for taskID, taskExecSummary := range executionSummary.Tasks {
-		if taskSummary, ok := taskSummaryMap[taskID]; ok {
-			taskSummary.Execution = taskExecSummary
-		}
-	}
-
-	// We gathered the info as a map, but we want to attach it as an array
-	for _, s := range taskSummaryMap {
-		runSummary.Tasks = append(runSummary.Tasks, s)
-	}
+	// Assign tasks after execution
+	runSummary.Tasks = taskSummaries
 
 	for _, err := range errs {
 		if errors.As(err, &exitCodeErr) {
@@ -178,7 +173,7 @@ func (ec *execContext) logError(log hclog.Logger, prefix string, err error) {
 	ec.ui.Error(fmt.Sprintf("%s%s%s", ui.ERROR_PREFIX, prefix, color.RedString(" %v", err)))
 }
 
-func (ec *execContext) exec(ctx gocontext.Context, packageTask *nodes.PackageTask, deps dag.Set) error {
+func (ec *execContext) exec(ctx gocontext.Context, packageTask *nodes.PackageTask, deps dag.Set) (*runsummary.TaskExecutionSummary, error) {
 	cmdTime := time.Now()
 
 	progressLogger := ec.logger.Named("")
@@ -198,7 +193,7 @@ func (ec *execContext) exec(ctx gocontext.Context, packageTask *nodes.PackageTas
 	if packageTask.Command == "" {
 		progressLogger.Debug("no task in package, skipping")
 		progressLogger.Debug("done", "status", "skipped", "duration", time.Since(cmdTime))
-		return nil
+		return taskExecSummary, nil
 	}
 
 	var prefix string
@@ -226,7 +221,7 @@ func (ec *execContext) exec(ctx gocontext.Context, packageTask *nodes.PackageTas
 		prefixedUI.Error(fmt.Sprintf("error fetching from cache: %s", err))
 	} else if hit {
 		taskExecSummary.Add(runsummary.TargetCached, nil, nil)
-		return nil
+		return taskExecSummary, nil
 	}
 
 	// Setup command execution
@@ -296,14 +291,13 @@ func (ec *execContext) exec(ctx gocontext.Context, packageTask *nodes.PackageTas
 		// if we already know we're in the process of exiting,
 		// we don't need to record an error to that effect.
 		if errors.Is(err, process.ErrClosing) {
-			return nil
+			return taskExecSummary, nil
 		}
 
 		var e *process.ChildExit
 		var exitCode int
 		if errors.As(err, &e) {
 			exitCode = err.(*process.ChildExit).ExitCode
-			// add exit code
 		}
 		taskExecSummary.Add(runsummary.TargetBuildFailed, err, &exitCode)
 		progressLogger.Error(fmt.Sprintf("Error: command finished with error: %v", err))
@@ -317,7 +311,7 @@ func (ec *execContext) exec(ctx gocontext.Context, packageTask *nodes.PackageTas
 		// If there was an error, flush the buffered output
 		taskCache.OnError(prefixedUI, progressLogger)
 
-		return err
+		return taskExecSummary, err
 	}
 
 	duration := time.Since(cmdTime)
@@ -333,5 +327,5 @@ func (ec *execContext) exec(ctx gocontext.Context, packageTask *nodes.PackageTas
 	// Clean up tracing
 	taskExecSummary.Add(runsummary.TargetBuilt, nil, nil)
 	progressLogger.Debug("done", "status", "complete", "duration", duration)
-	return nil
+	return taskExecSummary, nil
 }
